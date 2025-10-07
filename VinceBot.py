@@ -14,14 +14,14 @@ from pywikibot.exceptions import HiddenKeyError
 
 # ============ AYARLAR ============
 PROJECT = ("tr", "wikipedia")
-DRY_RUN = False                 # önce deneme
+DRY_RUN = True                 # önce deneme
 VERBOSE = True                 # ayrıntılı çıktı
-STATE_FILE = "/data/project/vincebot1/VinceBot/vincebot_state.json"
+STATE_FILE = "vincebot_state.json"
 EDIT_SUMMARY = "Bot: kullanıcı adı (#9) engeli bildirimi"
 SECTION_TITLE = "Kullanıcı adı engeli"
 SLEEP_BETWEEN_EDITS = 2
 SCAN_WINDOW_HOURS = 6          # test için geniş aralık 
-LOG_TOTAL = 10                # incelenecek maksimum kayıt sayısı
+LOG_TOTAL = 50                # incelenecek maksimum kayıt sayısı
 # ================================
 
 _USERNAME_9_RE = re.compile(
@@ -135,10 +135,4 @@ def main():
     print(f"Bitti. İncelenen: {count_seen}, Eşleşen: {count_match}, DRY_RUN={DRY_RUN}")
 
 if __name__ == "__main__":
-    while True:
-        try:
-            main()
-        except Exception as e:
-            print("Hata:", e)
-        print("60 saniye bekleniyor...")
-        time.sleep(60)
+    main()
