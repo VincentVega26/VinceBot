@@ -117,7 +117,7 @@ def main():
 
         # EŞLEŞTİ
         count_match += 1
-        message = "{{yk:ku-kaengel}}\n" f"<!-- KAENGEL:{marker} -->"
+        message = "{{yk:ku-kaengel|imza=evet}}\n" f"<!-- KAENGEL:{marker} -->"
         print(f"==> EŞLEŞTİ: {target_name} | DRY_RUN={DRY_RUN}")
 
         if not DRY_RUN:
