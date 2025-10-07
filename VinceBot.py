@@ -14,7 +14,7 @@ from pywikibot.exceptions import HiddenKeyError
 
 # ============ AYARLAR ============
 PROJECT = ("tr", "wikipedia")
-DRY_RUN = True                 # önce deneme
+DRY_RUN = False                 # önce deneme
 VERBOSE = True                 # ayrıntılı çıktı
 STATE_FILE = "/data/project/vincebot1/VinceBot/vincebot_state.json"
 EDIT_SUMMARY = "Bot: kullanıcı adı (#9) engeli bildirimi"
