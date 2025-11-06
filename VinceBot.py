@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-VinceBot (trwiki) — #9 KA engeli bildirimi
-- Gerekçesi "#9-[[VP:KA|Uygun olmayan kullanıcı adı]]" olan block/reblock olaylarını yakalar.
-- Engellenenin mesaj sayfasına {{yk:ku-kaengel}} bırakır.
-- DRY_RUN=True iken sadece ne yapacağını yazar (değişiklik yapmaz).
+VinceBot (trwiki)
+#9-[[VP:KA|Uygun olmayan kullanıcı adı]] → {{yk:ku-kaengel|imza=evet}}
+#8-[[VP:TELİF|Telif hakkı ihlali]] → {{yk:ku-telifengel|imza=evet}}
 """
 
 import json, os, re, time
@@ -14,21 +13,26 @@ from pywikibot.exceptions import HiddenKeyError
 
 # ============ AYARLAR ============
 PROJECT = ("tr", "wikipedia")
-DRY_RUN = False                 # önce deneme
-VERBOSE = True                 # ayrıntılı çıktı
+DRY_RUN = False
+VERBOSE = True
 STATE_FILE = "vincebot_state.json"
-EDIT_SUMMARY = "Bot: kullanıcı adı (#9) engeli bildirimi"
-SECTION_TITLE = "Kullanıcı adı engeli"
+EDIT_SUMMARY = "Bot: engel bildirimi (#8/#9)"
 SLEEP_BETWEEN_EDITS = 2
-SCAN_WINDOW_HOURS = 6          # test için geniş aralık 
-LOG_TOTAL = 50                # incelenecek maksimum kayıt sayısı
+SCAN_WINDOW_HOURS = 6
+LOG_TOTAL = 50
 # ================================
 
-_USERNAME_9_RE = re.compile(
-    r"#\s*9\s*-\s*\[\[\s*Vikipedi\s*:\s*KA\s*\|\s*Uygun\s+olmayan\s+kullanıcı\s+adı\s*\]\]",
+# --- Gerekçe desenleri ---
+_RE_KA_9 = re.compile(
+    r"#\s*9\s*-\s*\[\[\s*(?:VP|Vikipedi)\s*:\s*KA\s*\|\s*Uygun\s+olmayan\s+kullanıcı\s+adı\s*\]\]",
+    flags=re.IGNORECASE
+)
+_RE_TELIF_8 = re.compile(
+    r"#\s*8\s*-\s*\[\[\s*(?:VP|Vikipedi)\s*:\s*TELİF\s*\|\s*Telif\s+hakk[ıi]\s+ihlali\s*\]\]",
     flags=re.IGNORECASE
 )
 
+# --- Yardımcı fonksiyonlar ---
 def load_state():
     if not os.path.exists(STATE_FILE):
         start = datetime.now(timezone.utc) - timedelta(hours=SCAN_WINDOW_HOURS)
@@ -37,20 +41,26 @@ def load_state():
         return json.load(f)
 
 def save_state(state):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
+    tmpfile = STATE_FILE + ".tmp"
+    with open(tmpfile, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+    os.replace(tmpfile, STATE_FILE)
 
 def already_notified(text, marker):
     return bool(text) and re.search(r"<!--\s*KAENGEL:" + re.escape(marker) + r"\s*-->", text)
 
-def is_username_policy_9(reason):
-    if not reason: return False
+def detect_reason_type(reason):
+    """#9, #8 veya None döner"""
+    if not reason:
+        return None
     r = reason.strip()
-    if _USERNAME_9_RE.search(r):
-        return True
-    rlow = r.lower()
-    return ("#9" in rlow) and ("uygun olmayan kullanıcı adı" in rlow) and ("vp:ka" in rlow)
+    if _RE_KA_9.search(r) or ("#9" in r.lower() and "uygun olmayan kullanıcı adı" in r.lower()):
+        return "ka9"
+    if _RE_TELIF_8.search(r) or ("#8" in r.lower() and "telif" in r.lower()):
+        return "telif8"
+    return None
 
+# --- Ana fonksiyon ---
 def main():
     print("Login başlıyor...")
     site = pywikibot.Site(*PROJECT)
@@ -64,7 +74,6 @@ def main():
 
     print(f"Durum: last_ts={last_ts} | LOG_TOTAL={LOG_TOTAL} | SCAN_WINDOW_HOURS={SCAN_WINDOW_HOURS}")
     print("Günlükler çekiliyor...")
-    # en yeni -> eski
     logs = site.logevents(logtype="block", total=LOG_TOTAL, reverse=False)
 
     count_seen, count_match = 0, 0
@@ -75,15 +84,9 @@ def main():
             if VERBOSE: print(f"- Atlandı (eski): {ts}")
             continue
 
-        action = log.action()
-        if action not in ("block", "reblock"):
-            if VERBOSE: print(f"- Atlandı (action={action}): {ts}")
+        if log.action() not in ("block", "reblock"):
             continue
 
-        # *** ÖNEMLİ: Gerekçe yorumdadır ***
-        reason = (log.comment() or "").strip()
-
-        # Bazı kayıtlar gizli (actionhidden): .page() patlar -> atla
         try:
             page = log.page()
         except HiddenKeyError:
@@ -91,37 +94,40 @@ def main():
             new_last_ts = max(new_last_ts, ts_sec)
             continue
 
+        reason = (log.comment() or "").strip()
         target_name = page.title(with_ns=False)
         admin_name = log.user()
-        marker = f"{int(ts_sec)}-{admin_name}-{action}"
-
+        marker = f"{int(ts_sec)}-{admin_name}-{log.action()}"
         count_seen += 1
-        if VERBOSE:
-            print(f"[{count_seen}] {ts} | {target_name} | action={action} | reason={reason!r}")
 
+        reason_type = detect_reason_type(reason)
         if marker in seen:
-            if VERBOSE: print("  · Atlandı (zaten işlenmiş marker).")
+            if VERBOSE: print(f"[{count_seen}] {ts} {target_name} zaten işlenmiş.")
+            continue
+        if not reason_type:
+            if VERBOSE: print(f"[{count_seen}] {ts} {target_name} #8/#9 değil.")
             continue
 
-        if not is_username_policy_9(reason):
-            if VERBOSE: print("  · Atlandı (gerekçe #9-[[VP:KA|Uygun olmayan kullanıcı adı]] değil).")
-            continue
+        # Eşleşme
+        if reason_type == "ka9":
+            template = "{{yk:ku-kaengel|imza=evet}}"
+            section = "Kullanıcı adı engeli"
+        elif reason_type == "telif8":
+            template = "{{yk:ku-telifengel|imza=evet}}"
+            section = "Telif hakkı engeli"
 
-        # Konuşma sayfası
         talk = page.toggleTalkPage()
         old_text = talk.get() if talk.exists() else ""
         if already_notified(old_text, marker):
-            if VERBOSE: print("  · Atlandı (aynı marker yorum imleci var).")
             seen.add(marker)
             continue
 
-        # EŞLEŞTİ
         count_match += 1
-        message = "{{yk:ku-kaengel|imza=evet}}\n" f"<!-- KAENGEL:{marker} -->"
-        print(f"==> EŞLEŞTİ: {target_name} | DRY_RUN={DRY_RUN}")
+        message = f"{template}\n<!-- KAENGEL:{marker} -->"
+        print(f"==> EŞLEŞTİ: {target_name} | Tür={reason_type} | DRY_RUN={DRY_RUN}")
 
         if not DRY_RUN:
-            new_text = (old_text + ("\n\n" if old_text else "")) + f"== {SECTION_TITLE} ==\n{message}\n"
+            new_text = (old_text + ("\n\n" if old_text else "")) + f"== {section} ==\n{message}\n"
             talk.text = new_text
             talk.save(summary=EDIT_SUMMARY, minor=True, botflag=True)
             time.sleep(SLEEP_BETWEEN_EDITS)
